@@ -1,5 +1,7 @@
+using System.Collections;
 using System.Collections.Generic;
 using TMPro;
+using Unity.VisualScripting.Antlr3.Runtime.Misc;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -7,23 +9,26 @@ public class PlayerInventoryUI : MonoBehaviour
 {
     [Header("References")]
     public Inventory inventory;
-    public List<Button> slotButtons = new List<Button>();
-    public Button useButton; // Optional: a separate Use button
+    public List<Button> slotButtons;
+    public Button useButton;
 
     private int selectedIndex = -1;
+    private bool isUsing = false;
 
-    private void Start()
+    void Start()
     {
-        // Set up slot button listeners
         for (int i = 0; i < slotButtons.Count; i++)
         {
-            int index = i; // local copy for closure
-            slotButtons[i].onClick.AddListener(() => SelectItem(index));
+            int index = i;
+            slotButtons[i].onClick.RemoveAllListeners();
+            slotButtons[i].onClick.AddListener(() => SelectSlot(index));
         }
 
-        // Optional: listener for Use button
         if (useButton != null)
+        {
+            useButton.onClick.RemoveAllListeners();
             useButton.onClick.AddListener(OnUseButtonPressed);
+        }
 
         UpdateUI();
     }
@@ -32,40 +37,39 @@ public class PlayerInventoryUI : MonoBehaviour
     {
         for (int i = 0; i < slotButtons.Count; i++)
         {
-            // Assume each slot button has a child "Icon" Image
             Image iconImage = slotButtons[i].transform.Find("Icon")?.GetComponent<Image>();
+            TMP_Text countText = slotButtons[i].transform.Find("Count")?.GetComponent<TMP_Text>();
 
-            if (i < inventory.items.Count && inventory.items[i] != null)
+            if (i < inventory.slots.Count && inventory.slots[i].item != null)
             {
-                Item item = inventory.items[i];
+                Item item = inventory.slots[i].item;
                 if (iconImage != null)
                 {
                     iconImage.sprite = item.icon;
                     iconImage.enabled = true;
                 }
+                if (countText != null)
+                {
+                    countText.text = (item.maxStack > 1) ? inventory.slots[i].count.ToString() : "";
+                }
             }
             else
             {
-                if (iconImage != null)
-                {
-                    iconImage.sprite = null;
-                    iconImage.enabled = false;
-                }
+                if (iconImage != null) { iconImage.sprite = null; iconImage.enabled = false; }
+                if (countText != null) countText.text = "";
             }
         }
 
         HighlightSelectedSlot();
     }
 
-    private void SelectItem(int index)
+    private void SelectSlot(int index)
     {
-        if (index < 0 || index >= inventory.items.Count) return;
+        if (index < 0 || index >= inventory.slots.Count) return;
+        if (inventory.slots[index].item == null) return;
 
         selectedIndex = index;
-        Item selectedItem = inventory.items[index];
-        Debug.Log("Selected item: " + selectedItem.itemName);
-
-        HighlightSelectedSlot();
+        UpdateUI();
     }
 
     private void HighlightSelectedSlot()
@@ -78,11 +82,27 @@ public class PlayerInventoryUI : MonoBehaviour
         }
     }
 
-    public void OnUseButtonPressed()
+    private void OnUseButtonPressed()
     {
-        if (selectedIndex >= 0 && selectedIndex < inventory.items.Count)
+        if (isUsing) return;  // ignore multiple clicks
+        isUsing = true;
+
+        if (selectedIndex >= 0 && selectedIndex < inventory.slots.Count)
         {
-            inventory.UseItem(selectedIndex);
+            InventorySlot slot = inventory.slots[selectedIndex];
+            if (slot.item != null)
+            {
+                inventory.UseItem(selectedIndex);
+            }
         }
+
+        // wait before allowing another click
+        StartCoroutine(ReenableUseButton());
+    }
+
+    private IEnumerator ReenableUseButton()
+    {
+        yield return null;
+        isUsing = false;
     }
 }

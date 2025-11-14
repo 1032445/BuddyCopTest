@@ -1,77 +1,121 @@
 using System.Collections;
 using System.Collections.Generic;
+using Unity.VisualScripting.Antlr3.Runtime.Misc;
 using UnityEngine;
 
 public class Inventory : MonoBehaviour
 {
     [Header("Inventory Settings")]
-    public List<Item> items = new List<Item>();
+    public List<InventorySlot> slots = new List<InventorySlot>();
 
-    [Header("Throw Settings")]
+    [Header("References")]
     public Transform throwOrigin;
+    public PlayerInventoryUI ui;
 
-    private Item selectedItem;
-    public CameraSwitcher cameraSwitcher;
+    private bool isUsingItem = false;
 
-    void Update()
+    void Awake()
     {
-        if (Input.GetKeyDown(KeyCode.Alpha1) && items.Count > 0)
-        {
-            selectedItem = items[0];
-            Debug.Log("Selected: " + selectedItem.itemName);
-        }
-
-        if (Input.GetMouseButtonDown(0) && selectedItem != null)
-        {
-            Vector3 mouseWorldPos = cameraSwitcher.cameras[cameraSwitcher.currentIndex].ScreenToWorldPoint(Input.mousePosition);
-            mouseWorldPos.z = 0f;
-            ThrowItem(selectedItem, mouseWorldPos);
-
-            selectedItem = null;
-        }
+        int slotCount = 4;
+        for (int i = 0; i < slotCount; i++)
+            slots.Add(new InventorySlot());
     }
 
-    public void ThrowItem(Item item, Vector3 targetPosition)
+    public void AddItem(Item item, int amount = 1)
     {
-        if (throwOrigin == null || item.throwablePrefab == null) return;
+        // try to stack first
+        foreach (InventorySlot slot in slots)
+        {
+            if (slot.item != null && slot.item.itemName == item.itemName && slot.count < item.maxStack)
+            {
+                int spaceLeft = item.maxStack - slot.count;
+                int toAdd = Mathf.Min(spaceLeft, amount);
+                slot.count += toAdd;
+                amount -= toAdd;
 
-        GameObject thrown = Instantiate(item.throwablePrefab, throwOrigin.position, Quaternion.identity);
+                if (amount <= 0)
+                {
+                    ui?.UpdateUI();
+                    return;
+                }
+            }
+        }
 
-        Vector3 direction = targetPosition - throwOrigin.position;
-        direction.z = 0f;
+        // fill empty slots
+        foreach (InventorySlot slot in slots)
+        {
+            if (slot.item == null)
+            {
+                slot.item = item;
+                slot.count = Mathf.Min(item.maxStack, amount);
+                amount -= slot.count;
 
-        float maxThrowDistance = 3f;
-        float distance = Mathf.Min(direction.magnitude, maxThrowDistance);
-        direction.Normalize();
+                if (amount <= 0)
+                {
+                    ui?.UpdateUI();
+                    return;
+                }
+            }
+        }
 
-        Rigidbody2D rb = thrown.GetComponent<Rigidbody2D>();
+        if (amount > 0)
+            Debug.Log("Inventory full! Could not add all items.");
+
+        ui?.UpdateUI();
+    }
+
+    public void UseItem(int slotIndex)
+    {
+        if (isUsingItem) return;
+        isUsingItem = true;
+
+        if (slotIndex < 0 || slotIndex >= slots.Count)
+        {
+            isUsingItem = false;
+            return;
+        }
+
+        InventorySlot slot = slots[slotIndex];
+        if (slot.item == null)
+        {
+            isUsingItem = false;
+            return;
+        }
+
+        string itemName = slot.item.itemName;
+        DropItem(slot.item, throwOrigin.position);
+        slot.count--;
+        if (slot.count <= 0) slot.Clear();
+
+        Debug.Log($"Used 1 {itemName}");
+        ui?.UpdateUI();
+
+        isUsingItem = false;
+    }
+
+    private void DropItem(Item item, Vector3 position)
+    {
+        if (item.throwablePrefab == null) return;
+
+        GameObject spawned = Instantiate(item.throwablePrefab, position, Quaternion.identity);
+
+        Rigidbody2D rb = spawned.GetComponent<Rigidbody2D>();
         if (rb != null)
-        {
-            float throwForce = item.throwForce * distance;
-            rb.AddForce(direction * throwForce, ForceMode2D.Impulse);
-        }
+            rb.AddForce(Vector3.zero);
 
-        Destroy(thrown, item.lifetime);
-
-        Debug.Log("Threw: " + item.itemName);
+        Destroy(spawned, item.lifetime);
     }
+}
 
-    public void AddItem(Item item)
+[System.Serializable]
+public class InventorySlot
+{
+    public Item item;
+    public int count;
+
+    public void Clear()
     {
-        if (item == null) return;
-
-        items.Add(item);
-        Debug.Log("Picked up: " + item.itemName);
-    }
-
-    public void UseItem(int index)
-    {
-        if (index < 0 || index >= items.Count) return;
-
-        Item item = items[index];
-        if (item == null) return;
-
-        selectedItem = item;
-        Debug.Log("Selected via UI: " + selectedItem.itemName);
+        item = null;
+        count = 0;
     }
 }
